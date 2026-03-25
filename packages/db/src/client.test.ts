@@ -1,9 +1,20 @@
 import { createHash } from "node:crypto";
+import { execSync } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+
+function canRunEmbeddedPostgres(): boolean {
+  if (typeof process.getuid !== "function" || process.getuid() !== 0) return true;
+  try {
+    execSync("id postgres", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 import postgres from "postgres";
 import {
   applyPendingMigrations,
@@ -23,6 +34,7 @@ type EmbeddedPostgresCtor = new (opts: {
   password: string;
   port: number;
   persistent: boolean;
+  createPostgresUser?: boolean;
   initdbFlags?: string[];
   onLog?: (message: unknown) => void;
   onError?: (message: unknown) => void;
@@ -67,6 +79,7 @@ async function createTempDatabase(): Promise<string> {
     password: "paperclip",
     port,
     persistent: true,
+    createPostgresUser: process.getuid?.() === 0,
     initdbFlags: ["--encoding=UTF8", "--locale=C"],
     onLog: () => {},
     onError: () => {},
@@ -101,7 +114,7 @@ afterEach(async () => {
   }
 });
 
-describe("applyPendingMigrations", () => {
+describe.skipIf(!canRunEmbeddedPostgres())("applyPendingMigrations", () => {
   it(
     "applies an inserted earlier migration without replaying later legacy migrations",
     async () => {

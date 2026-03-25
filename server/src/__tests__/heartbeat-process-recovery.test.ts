@@ -3,9 +3,19 @@ import fs from "node:fs";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+
+function canRunEmbeddedPostgres(): boolean {
+  if (typeof process.getuid !== "function" || process.getuid() !== 0) return true;
+  try {
+    execSync("id postgres", { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
 import {
   applyPendingMigrations,
   createDb,
@@ -32,6 +42,7 @@ type EmbeddedPostgresCtor = new (opts: {
   password: string;
   port: number;
   persistent: boolean;
+  createPostgresUser?: boolean;
   initdbFlags?: string[];
   onLog?: (message: unknown) => void;
   onError?: (message: unknown) => void;
@@ -72,6 +83,7 @@ async function startTempDatabase() {
     password: "paperclip",
     port,
     persistent: true,
+    createPostgresUser: process.getuid?.() === 0,
     initdbFlags: ["--encoding=UTF8", "--locale=C"],
     onLog: () => {},
     onError: () => {},
@@ -92,7 +104,7 @@ function spawnAliveProcess() {
   });
 }
 
-describe("heartbeat orphaned process recovery", () => {
+describe.skipIf(!canRunEmbeddedPostgres())("heartbeat orphaned process recovery", () => {
   let db!: ReturnType<typeof createDb>;
   let instance: EmbeddedPostgresInstance | null = null;
   let dataDir = "";
